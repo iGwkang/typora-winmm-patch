@@ -1,0 +1,18 @@
+# large/local analysis inputs and scaffolding
+/typora-setup-x64.exe
+/extract-installer/
+/work/
+/runtime/
+/tools/
+
+# MSVC intermediates
+*.obj
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.res
+*.tmp
+*.log
+.vs/
+__pycache__/
