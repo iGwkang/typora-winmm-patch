@@ -249,6 +249,62 @@
     });
   } catch (e) {}
 
+  // ---- license renewal: answer locally ----
+  // The startup renew POST is blocked like every other Typora call. When it fails,
+  // Typora bumps SLicense's failCount, retries after a randomized ~9 minute delay
+  // and then marks the license "unfilled", which raises the trial/activation window.
+  // Answering the request in-process keeps the license active without any traffic.
+  function renewTarget(opts) {
+    if (typeof opts === 'string') return opts;
+    if (!opts || typeof opts !== 'object') return '';
+    var parts = [opts.url, opts.href, opts.hostname, opts.host, opts.pathname, opts.path];
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+      if (typeof parts[i] === 'string') out.push(parts[i]);
+    }
+    return out.join(' ');
+  }
+  function isRenewRequest(opts) {
+    var t = renewTarget(opts).toLowerCase();
+    return t.indexOf('/api/client/renew') !== -1 && t.indexOf('typora') !== -1;
+  }
+  function renewResponse() {
+    var EventEmitter = require('events').EventEmitter;
+    var PassThrough = require('stream').PassThrough;
+    var req = new EventEmitter();
+    req.setHeader = req.removeHeader = function () {};
+    req.getHeader = function () { return undefined; };
+    req.write = function () { return true; };
+    req.destroy = req.abort = function () { req.emit('abort'); };
+    req.end = function () {
+      process.nextTick(function () {
+        var body = Buffer.from('{"success":true}', 'utf8');
+        var res = new PassThrough();
+        res.statusCode = 200;
+        res.statusMessage = 'OK';
+        res.headers = { 'content-type': 'application/json', 'content-length': String(body.length) };
+        req.emit('response', res);
+        res.end(body);
+      });
+      return req;
+    };
+    return req;
+  }
+  try {
+    var net = require('electron').net;
+    if (net && typeof net.request === 'function' && !net.__reaRenewHooked) {
+      net.__reaRenewHooked = true;
+      var origNetRequest = net.request.bind(net);
+      Object.defineProperty(net, 'request', {
+        configurable: true,
+        value: function (opts) {
+          if (isRenewRequest(opts)) return renewResponse();
+          return origNetRequest.apply(net, arguments);
+        }
+      });
+    }
+  } catch (e) {}
+
   try {
     var origFetch = globalThis.fetch;
     if (typeof origFetch === 'function') {

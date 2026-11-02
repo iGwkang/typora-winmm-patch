@@ -121,11 +121,46 @@ loader 长度必须小于原始 `launch.dist.js` 的 size（1.14.15 为 1383 字
   - `app.commandLine.appendSwitch('host-resolver-rules', ...)` 做 DNS 兜底；
   - Node `http/https/dns/fetch` 同域名拦截；
   - DLL 的 `GetAddrInfoW` / `GetAddrInfoExW` / `getaddrinfo` / `gethostbyname`
-    再做一层，允许 `dict.typora.io`、`support.typora.io`。
+    再做一层，允许 `dict.typora.io`、`support.typora.io`；
+  - 例外：`/api/client/renew` 在 `require('electron').net.request` 层本地应答
+    `200 {"success":true}`，见第 8 节。
 - 退出抑制：只匹配
   `Timeout._onTimeout` + `atom.compiled.dist.jsc` 的调用栈。
 
-## 8. 兼容性
+## 8. 续期（renew）失败与试用回退
+
+启动约 0.2s 后，主进程用 `electron-fetch` 向 `https://store.typora.io/api/client/renew`
+或国内镜像 `https://dian.typora.com.cn/api/client/renew` 发 POST：
+
+```json
+{"v":"win|1.14.15","license":"<license>","l":"<machineId>","u":"<deviceId>","type":""}
+```
+
+判定与回退：
+
+- 12 小时内已续期则整段跳过，日志为 `[renewLicense] license renewed in 12h`；
+  该 12 小时基于 `SLicense` 第三段的日期（只到日，按当日 0 点算），
+  因此同一天 0 点后 12 小时内启动不会触发续期。
+- 失败时：`SLicense` 第二段 failCount 自增（实测 `#1#`），并注册一个**随机化**定时器
+  （实测 530469 ms，回调处伴随 `2nd <random>` 日志）。
+- 定时器到点后再次续期；仍失败则触发 `onUnfillLicense`：
+  向渲染进程注入 `File.option.hasLicense = false`、移除/重画未激活角标，
+  并弹出试用/激活窗口（“激活 Typora / 您的试用还有 0 天到期”）。
+- 因为延迟是随机且约 9 分钟，表现为“有时弹、有时不弹”：只有窗口停留超过该延迟
+  才会看到；短会话不受影响。网络被补丁屏蔽后，续期必然失败。
+
+补丁对策：payload 在 `require('electron').net.request` 层截获
+`/api/client/renew`（hostname 含 `typora`），不落到网络层，直接返回合成的
+`200 {"success":true}`；ClientRequest 用 `EventEmitter`、响应体用 `PassThrough`
+模拟，满足 electron-fetch 的接口。Typora 走成功分支（日志 `license renewed`），
+不再注册失败重试定时器，也不会 `unfill`。
+
+- 伪造响应不需要 `license` 字段：Typora 会写回 `SLicense = #0#<date>`，
+  之后读取仍由补丁 hook 返回合成许可串，不影响校验。
+- 其它许可证接口（激活/反激活）保持屏蔽；如果将来续期路径或 hostname 变化，
+  需要同步更新 `src/payload.js` 中的 `isRenewRequest`。
+
+## 9. 兼容性
 
 - 1.3.8 使用 `main.node`（原生）而不是 `.jsc`，本方案不适用。
 - 1.14.x/1.15.x 若仍使用相同的 `launch.dist.js` + `.jsc` 结构，DLL 会按新 asar

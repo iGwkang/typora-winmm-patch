@@ -73,6 +73,8 @@ docs/analysis.md       逆向分析与补丁设计记录
 4. loader 在原始 `.jsc` 之前加载 `payload.js`：
    - 伪造 `SLicense` 读取并 hook `crypto.publicDecrypt`；
    - 屏蔽 Typora 许可/更新域名（保留词典与帮助域名）；
+   - 在 `electron.net` 层本地应答 `/api/client/renew`（返回成功），
+     避免续期失败在约 9 分钟后弹出试用窗口；
    - 忽略 asar 完整性校验定时器触发的进程退出（不影响用户正常退出）。
 5. 机器指纹：`sha256(MachineGuid + "typora")` 的 base64，把 `[/=+-]` 替换为 `a`，取前 10 位。
 

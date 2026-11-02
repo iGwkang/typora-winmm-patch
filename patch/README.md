@@ -62,6 +62,9 @@
      用户正常退出不受影响。
    - 兜底：把注入到渲染进程的 `File.option.hasLicense = false` 改写为 `true`，
      并去掉“未激活”角标。
+   - `/api/client/renew` 续期请求不落到网络层，由 payload 直接返回
+     `200 {"success":true}`；否则续期失败会在约 9 分钟后把许可标记为无效
+     并弹出试用/激活窗口。
 
 ## 已知现象
 
